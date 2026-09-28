@@ -1,0 +1,43 @@
+@import "tailwindcss";
+
+/* ─── Page route transition ────────────────────────────────────────────────
+   Applied by PageTransition.jsx via key={location.pathname}.
+   When the key changes React remounts the node, restarting the animation.
+───────────────────────────────────────────────────────────────────────────── */
+@keyframes pageEnter {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.page-transition {
+  animation: pageEnter 300ms ease-out both;
+}
+
+/* Respect user preference: suppress all transitions/animations */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Mobile nav slide-down transition */
+.mobile-nav-enter {
+  opacity: 0;
+  transform: translateY(-6px);
+}
+.mobile-nav-enter-active {
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 170ms ease-out, transform 170ms ease-out;
+}
