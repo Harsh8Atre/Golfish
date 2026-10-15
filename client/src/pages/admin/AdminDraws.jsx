@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { adminService } from '../../services/adminService';
 import { Play, CheckCircle, AlertCircle, Info } from 'lucide-react';
 
@@ -8,7 +8,25 @@ const AdminDraws = () => {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
   });
   
-  const [simulation, setSimulation] = useState(null);
+  const [simulation, setSimulation] = useState(() => {
+    try {
+      const saved = sessionStorage.getItem('adminDrawSimulation');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  useEffect(() => {
+    if (simulation) {
+      sessionStorage.setItem(
+        'adminDrawSimulation',
+        JSON.stringify(simulation)
+      );
+    } else {
+      sessionStorage.removeItem('adminDrawSimulation');
+    }
+  }, [simulation]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');

@@ -28,15 +28,27 @@ export const checkout = async (req, res) => {
     }
 
     // 3. Prevent duplicate active subscriptions
-    const { data: existingSub } = await supabase
+    const { data: existingSubs, error: existingSubError } = await supabase
       .from('subscriptions')
-      .select('status')
+      .select('id, status')
       .eq('user_id', userId)
       .in('status', ['ACTIVE', 'TRIALING'])
-      .single();
+      .limit(1);
 
-    if (existingSub) {
-      return res.status(409).json({ success: false, message: 'You already have an active subscription' });
+    if (existingSubError) {
+      console.error('Subscription check error:', existingSubError);
+
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to check existing subscription'
+      });
+    }
+
+    if (existingSubs && existingSubs.length > 0) {
+      return res.status(409).json({
+        success: false,
+        message: 'You already have an active subscription'
+      });
     }
 
     // 4. Map to Stripe Price ID
@@ -77,19 +89,36 @@ export const checkout = async (req, res) => {
 
 export const getSubscription = async (req, res) => {
   try {
+    console.log("🔥 USER FROM TOKEN:", req.user);
+    console.log("🔥 USER ID:", req.user.userId); 
     const userId = req.user.userId;
 
     const { data: subscription, error } = await supabase
       .from('subscriptions')
       .select(`
-        id, plan, status, charity_percentage, current_period_end,
+        id, plan, status, charity_percentage, current_period_end, stripe_subscription_id,
         charities (id, name)
       `)
       .eq('user_id', userId)
-      .single();
+      .in('status', ['ACTIVE', 'TRIALING'])
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
-    if (error || !subscription) {
-      return res.json({ success: true, subscription: null });
+    if (error) {
+      console.error('Get subscription DB error:', error);
+
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to fetch subscription'
+      });
+    }
+
+    if (!subscription) {
+      return res.json({
+        success: true,
+        subscription: null
+      });
     }
 
     res.json({
@@ -100,6 +129,7 @@ export const getSubscription = async (req, res) => {
         status: subscription.status,
         charityPercentage: subscription.charity_percentage,
         currentPeriodEnd: subscription.current_period_end,
+        stripeSubscriptionId: subscription.stripe_subscription_id,
         charity: subscription.charities
       }
     });

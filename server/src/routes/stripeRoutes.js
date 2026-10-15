@@ -44,16 +44,29 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
           
           const metadata = subscription.metadata;
           if (metadata && metadata.user_id) {
-            await supabase.from('subscriptions').insert([{
-              user_id: metadata.user_id,
-              plan: metadata.plan,
-              status: mapStripeStatus(subscription.status),
-              charity_id: metadata.charity_id,
-              charity_percentage: parseFloat(metadata.charity_percentage),
-              stripe_customer_id: session.customer,
-              stripe_subscription_id: subscription.id,
-              current_period_end: new Date(subscription.current_period_end * 1000).toISOString()
-            }]);
+            const { data, error } = await supabase
+              .from('subscriptions')
+              .upsert(
+                [{
+                  user_id: metadata.user_id,
+                  plan: metadata.plan,
+                  status: mapStripeStatus(subscription.status),
+                  charity_id: metadata.charity_id,
+                  charity_percentage: parseFloat(metadata.charity_percentage),
+                  stripe_customer_id: session.customer,
+                  stripe_subscription_id: subscription.id,
+                  current_period_end: new Date(
+                    subscription.current_period_end * 1000
+                  ).toISOString()
+                }],
+                {
+                  onConflict: 'stripe_subscription_id'
+                }
+              )
+              .select();
+
+            console.log('Subscription upserted:', data);
+            console.log('Supabase error:', error);
           }
         }
         break;
