@@ -37,38 +37,88 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
     switch (event.type) {
       case 'checkout.session.completed': {
         const session = event.data.object;
-        if (session.mode === 'subscription') {
-          const subscriptionId = session.subscription;
-          // Retrieve subscription to get metadata
-          const subscription = await stripe.subscriptions.retrieve(subscriptionId);
-          
-          const metadata = subscription.metadata;
-          if (metadata && metadata.user_id) {
-            const { data, error } = await supabase
-              .from('subscriptions')
-              .upsert(
-                [{
-                  user_id: metadata.user_id,
-                  plan: metadata.plan,
-                  status: mapStripeStatus(subscription.status),
-                  charity_id: metadata.charity_id,
-                  charity_percentage: parseFloat(metadata.charity_percentage),
-                  stripe_customer_id: session.customer,
-                  stripe_subscription_id: subscription.id,
-                  current_period_end: new Date(
-                    subscription.current_period_end * 1000
-                  ).toISOString()
-                }],
-                {
-                  onConflict: 'stripe_subscription_id'
-                }
-              )
-              .select();
 
-            console.log('Subscription upserted:', data);
-            console.log('Supabase error:', error);
-          }
+        if (session.mode !== 'subscription' || !session.subscription) {
+          break;
         }
+
+        const subscription = await stripe.subscriptions.retrieve(
+          session.subscription
+        );
+
+        // Prefer subscription metadata, then checkout session metadata,
+        // then the user ID attached to the checkout session.
+        const userId =
+          subscription.metadata?.user_id ||
+          session.metadata?.user_id ||
+          session.client_reference_id;
+
+        if (!userId) {
+          throw new Error(
+            `Missing user ID for Checkout Session ${session.id}`
+          );
+        }
+
+        const metadata = {
+          ...session.metadata,
+          ...subscription.metadata,
+        };
+
+        const subscriptionItem = subscription.items?.data?.[0];
+
+        const currentPeriodEnd =
+          subscriptionItem?.current_period_end ??
+          subscription.current_period_end;
+
+        const subscriptionData = {
+          user_id: userId,
+          plan: metadata.plan || null,
+          status: mapStripeStatus(subscription.status),
+          charity_id: metadata.charity_id || null,
+          charity_percentage:
+            metadata.charity_percentage != null
+              ? Number(metadata.charity_percentage)
+              : null,
+          stripe_customer_id:
+            typeof session.customer === 'string'
+              ? session.customer
+              : session.customer?.id,
+          stripe_subscription_id: subscription.id,
+          current_period_end: currentPeriodEnd
+            ? new Date(currentPeriodEnd * 1000).toISOString()
+            : null,
+        };
+
+        const { data, error } = await supabase
+          .from('subscriptions')
+          .upsert(subscriptionData, {
+            onConflict: 'stripe_subscription_id',
+          })
+          .select();
+
+        if (error) {
+          console.error('Supabase subscription upsert failed:', {
+            code: error.code,
+            message: error.message,
+            details: error.details,
+            hint: error.hint,
+          });
+
+          throw error;
+        }
+
+        if (!data?.length) {
+          throw new Error(
+            'Supabase upsert returned no subscription row'
+          );
+        }
+
+        console.log('Subscription saved successfully:', {
+          userId,
+          subscriptionId: subscription.id,
+          status: subscription.status,
+        });
+
         break;
       }
       
